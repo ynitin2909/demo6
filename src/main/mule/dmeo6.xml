@@ -1,13 +1,113 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core"
-	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
-	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
-http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+<mule xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:ftp="http://www.mulesoft.org/schema/mule/ftp"
+	xmlns:salesforce="http://www.mulesoft.org/schema/mule/salesforce"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/salesforce http://www.mulesoft.org/schema/mule/salesforce/current/mule-salesforce.xsd
+http://www.mulesoft.org/schema/mule/ftp http://www.mulesoft.org/schema/mule/ftp/current/mule-ftp.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd">
 	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="2ec59f27-93ca-48d2-8d1e-a14bec327627" >
 		<http:listener-connection host="0.0.0.0" port="8081" />
 	</http:listener-config>
+	<db:config name="Database_Config" doc:name="Database Config" doc:id="b8a798bb-7493-45f5-be28-e1c0255e5a74" >
+		<db:my-sql-connection host="localhost" port="3306" user="root" password="root1234" />
+	</db:config>
+	<salesforce:sfdc-config name="Salesforce_Config" doc:name="Salesforce Config" doc:id="6fab4cd1-8fec-40dc-b8bb-96c11dbae41a" >
+		<salesforce:basic-connection username="tcpksol@company.sandbox" password="qwe!@#123" securityToken="mp9JIqMeFvEnrtMuq2NGey9u" />
+	</salesforce:sfdc-config>
+	<flow name="salesforce_datainsert" doc:id="a4ecf8c8-2835-4494-9107-cd52fe2cb60c" >
+		<ee:transform doc:name="Transform Message" doc:id="80c31c45-83c6-4319-bd8c-d5b110094b7c">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+payload map ( payload01 , indexOfPayload01 ) -> {
+	
+	OwnerId: payload01.id as String,
+	Name: payload01.first_name
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<salesforce:upsert doc:name="Upsert" doc:id="af6b8099-c8d6-4147-970c-d61aa5469144" config-ref="Salesforce_Config" objectType="Customer" externalIdFieldName="Name" />
+	</flow>
 	<flow name="dmeo6Flow" doc:id="945233b4-f37b-49ee-99ef-1c45e3fad7c2" >
 		<http:listener doc:name="Listener" doc:id="4f74bc6e-b45b-4356-8efb-8f23a076202d" config-ref="HTTP_Listener_config" path="/demo6"/>
+		<set-variable value="#[payload]" doc:name="Set Variable" doc:id="7a5aaec2-2185-44ea-aa63-d7a0020f8c69" variableName="demo6"/>
+		<scatter-gather doc:name="Scatter-Gather" doc:id="30ec6afe-b83b-4fd0-be78-130949663f48" >
+			<route >
+				<ee:cache doc:name="Cache" doc:id="6ca761d4-b097-47a9-aaad-482ca4fee732" >
+					<flow-ref doc:name="Flow Reference" doc:id="f1452d8f-efec-4547-9130-9eec5a6b15e6" name="sql_datainsert"/>
+				</ee:cache>
+				<set-payload value="#[vars.demo6]" doc:name="Set Payload" doc:id="feef6703-a668-4a73-97d6-f43591fbf227" />
+				<flow-ref doc:name="Flow Reference" doc:id="48b39f3b-8e95-48ff-8414-4f2f3b7fe4e7" name="file_write"/>
+			</route>
+			<route >
+				<set-payload value="#[vars.demo6]" doc:name="Set Payload" doc:id="c16571c2-6df6-4847-a3de-8203f483fc8c" />
+				<flow-ref doc:name="Flow Reference" doc:id="6bbcfb5e-14e6-4c54-b3ef-525ca2c066f9" name="salesforce_datainsert"/>
+			</route>
+		</scatter-gather>
+		<logger level="INFO" doc:name="Logger" doc:id="bfe77cc3-e74d-4776-a38b-07b7e4bc8fda" />
 	</flow>
+	<sub-flow name="sql_datainsert" doc:id="d423ef88-7612-467e-8ed9-a5ce65d7180f" >
+		<ee:transform doc:name="Transform Message" doc:id="b99146f8-8961-4273-9430-aa0b2826efae">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+payload map ( payload01 , indexOfPayload01 ) -> {
+	demo6_col4: payload01.gender,
+	demo6_col5: payload01.email,
+	demo6_col2: payload01.first_name,
+	demo6_col3: payload01.last_name,
+	demo6_col1: payload01.id as String
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<first-successful doc:name="First Successful" doc:id="60d65d94-456f-40d2-bc90-ca7494eaaa61" >
+			<route >
+				<logger level="INFO" doc:name="Logger_1" doc:id="34a4ef0f-72bb-4a05-9308-25c8c7dd4a5a" message="#[10/0]"/>
+			</route>
+			<route >
+				<logger level="INFO" doc:name="Logger_2" doc:id="4fb1a44d-37fe-4182-be40-5e9e84a70205" message="#[20/0]"/>
+			</route>
+			<route >
+				<db:bulk-insert doc:name="Bulk insert_1" doc:id="e8a89861-becd-422f-90fc-50de5b5ff0e5" config-ref="Database_Config">
+			<db:sql><![CDATA[INSERT INTO `demo6`.`new_table`
+(`demo6_col1`,
+`demo6_col2`,
+`demo6_col3`,
+`demo6_col4`,
+`demo6_col5`)
+VALUES
+(:demo6_col1,:demo6_col2,:demo6_col3,:demo6_col4,:demo6_col5);]]></db:sql>
+		</db:bulk-insert>
+			</route>
+		</first-successful>
+		<logger level="INFO" doc:name="Logger" doc:id="d620d18a-7e3a-40dd-b8a7-76d39fdac718" />
+	</sub-flow>
+	<flow name="file_write" doc:id="ba696670-2ad0-4598-b5c9-b20322acbbcb" >
+		<ee:transform doc:name="Transform Message" doc:id="75238cd1-bc34-44f2-95bf-8eb237f6f25c">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+{
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+		<until-successful maxRetries="5" doc:name="Until Successful" doc:id="543b59ef-903b-4669-9b5d-f6d4c3534fa3" >
+			<file:write doc:name="Write" doc:id="cdf56c40-1328-4a50-a7cb-2238bc337ae3" path="demo6.csv" />
+		</until-successful>
+	</flow>
+	<error-handler name="dmeo6Error_Handler" doc:id="ce1ca11d-d113-4667-b981-bfeca906865d" >
+		<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="d4bf97ab-d7b6-4aae-9e4b-db7b7e4c7009" type="EXPRESSION">
+			<logger level="INFO" doc:name="Logger" doc:id="bad0cf0e-33af-425e-be1f-fb3b176504a2" />
+		</on-error-continue>
+		<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="b842c5e3-2d94-40fc-a314-b0950603dcf0" type="STREAM_MAXIMUM_SIZE_EXCEEDED">
+			<logger level="INFO" doc:name="Logger" doc:id="fa8cba77-23a4-4a71-a5be-2e8ffcf09195" />
+		</on-error-propagate>
+	</error-handler>
 </mule>
